@@ -1,7 +1,6 @@
 """
 Graphical user interface of the password manager
 """
-import time
 import tkinter as tk
 from UILogic import logicHandler
 import pyperclip as pc
@@ -22,14 +21,15 @@ Helper function that calls functions from UILogic class to check credentils when
 registering a new user. 
 """
 def registerUser(username, password):
-    print("adding new user...")
     #check password strength
     isStrong = logic.checkPasswordStrength(password)
     if(len(username) > 0):
         if(isStrong):
-            logic.registerNewUser(username, password)
-            print("new user added")
-            startPage()
+            success = logic.registerNewUser(username, password)
+            if(success):
+                startPage()
+            else:
+                tk.messagebox.showwarning("Warning", "Username is already taken!")
         else:
             tk.messagebox.showwarning("Warning", "Password is too weak!")
     else:
@@ -171,6 +171,94 @@ def logOut():
     startPage()
 
 """
+Helper function for account deletion. Prompts user to confirm and commands UILogic instance
+to handle the deletion. Upon succesful deletion the logOut function is called.
+"""
+def accountDeleteHelper():
+    userResponse = tk.messagebox.askquestion("Question",
+                 "Are you sure you want to delete your account and all \nassociated services?\nData cannot be recovered afterwards.",icon="question")
+    if userResponse == "yes":
+        serviceSuccess, userSuccess = logic.deleteAccount()
+        #Deletion was succesful. Log out.
+        if(serviceSuccess and userSuccess):
+            logOut()
+        #Something went wrong. Construct error message and warn user.
+        else:
+            errorMessage = "Account deletion failed!\nPlease contact software provider."
+            if(serviceSuccess == False):
+                errorMessage += "\nThere was an error deleting service data"
+            if(userSuccess == False):
+                errorMessage += "\nThere was an error deleting user data"
+            tk.messagebox.showwarning("Warning", errorMessage)
+    
+"""
+Helper function for changing users master password
+"""
+def userUpdateHelper(oldPassword, newPassword, repeatNewPassword):
+    if(newPassword == repeatNewPassword):
+        isStrong = logic.checkPasswordStrength(newPassword)
+        if(isStrong):
+            oldPasswordCheck = logic.passwordUpdateCheck(oldPassword)
+            if(oldPasswordCheck):
+                updateSuccess = logic.updateMasterPassword(newPassword)
+                if(updateSuccess):
+                    tk.messagebox.showwarning("Warning", "Password succesfully changed!")
+                else:
+                    tk.messagebox.showwarning("Warning", "A database error occured")
+            else:
+                tk.messagebox.showwarning("Warning", "Old password was not accepted")
+        else:
+            tk.messagebox.showwarning("Warning", "Please provide a strong password!")
+            
+    else:
+        tk.messagebox.showwarning("Warning", "Make sure new password fields match!")
+
+"""
+View for changing the master password
+"""
+def userUpdateView():
+    clearFrame()
+    label=tk.Label(frame,text='Change your master password')
+    label.grid(row = 0, column = 0)
+    
+    oldPasswordText = tk.Label(frame, text = "Old password:")
+    oldPasswordText.grid(row = 1, column = 0)
+    oldPassword = tk.StringVar()
+    oldPasswordEntry = tk.Entry(frame, textvariable = oldPassword, show='*')
+    oldPasswordEntry.grid(row = 1, column = 1)
+    
+    newPasswordText = tk.Label(frame, text = "New password:")
+    newPasswordText.grid(row = 2, column = 0)
+    newPassword = tk.StringVar()
+    newPasswordEntry = tk.Entry(frame, textvariable = newPassword, show='*')
+    newPasswordEntry.grid(row = 2, column = 1)
+    
+    repeatPasswordText = tk.Label(frame, text = "repeat new password:")
+    repeatPasswordText.grid(row = 3, column = 0)
+    repeatPassword = tk.StringVar()
+    repeatPasswordEntry = tk.Entry(frame, textvariable = repeatPassword, show='*')
+    repeatPasswordEntry.grid(row = 3, column = 1)
+    
+    saveButton =  tk.Button(frame, text='Save', command = lambda: userUpdateHelper(
+        oldPassword.get(), newPassword.get(), repeatPassword.get()))
+    saveButton.grid(row = 4, column = 0)
+    
+    backButton = tk.Button(frame, text='Back', command=mainPage)
+    backButton.grid(row = 5, column = 0)
+    
+    textBlock = tk.Text(frame, height=6, width=30)
+    textBlock.insert(tk.END, "The master password must have:\n-At least 12 characters\n-uppercase letter\n-lowercase letter\n-number\n-symbol")
+    textBlock.config(state=tk.DISABLED)
+    textBlock.grid(row = 6, column = 1)
+
+"""
+Generates a cryptographically safe 12 character password and pastes it to the clipboard
+"""    
+def randomHelper():
+    copyToClipboard(logic.generateRandomPassword())
+    tk.messagebox.showwarning("Warning", "Random password was generated to your clipboard!")
+
+"""
 Displays the main page after a succesful login.
 User can add new password to a service or View all saved services.
 """
@@ -182,9 +270,16 @@ def mainPage():
     bt1.grid(column=0,row=1)
     bt2=tk.Button(frame, text='stored passwords', command=viewServicesPage)
     bt2.grid(column=0,row=2)
-    bt3=tk.Button(frame, text='log out', command=logOut)
-    bt3.grid(column=0,row=3)
-
+    bt3 = tk.Button(frame, text = "Change master password", command = userUpdateView)
+    bt3.grid(column = 0, row = 3)
+    bt4 = tk.Button(frame, text = "delete account", command = accountDeleteHelper)
+    bt4.grid(column = 0, row = 4)
+    bt5=tk.Button(frame, text='log out', command=logOut)
+    bt5.grid(column=0,row=5)
+    
+    random = tk.Button(frame, text = "generate secure random password", command = randomHelper)
+    random.grid(column = 4, row = 1)
+    
 """
 A view where new service credentials can be added to the database
 """
@@ -248,12 +343,8 @@ def serviceDeleteHelper(service):
     userResponse = tk.messagebox.askquestion("Question",
                  "Do you really want to delete?",icon="question")
     if userResponse == "yes":
-        print("Yes selected")
-        print("Deleting: {}".format(service))
         logic.deleteService(service)
         viewServicesPage()
-    else:
-        print("Canceled deletion")
 
 """
 Helper for service credential update. Confirms the field with user before proceeding.
@@ -261,11 +352,11 @@ Helper for service credential update. Confirms the field with user before procee
 def serviceUpdateHelper(service, username, password):
     if(len(service) > 0 and len(username) > 0 and len(password) > 0):
         if (logic.updateService(service, username, password)):
-            print("update success")
+            #update success
             viewServicesPage()
             tk.messagebox.showwarning("Warning", "Update was succesful!")
         else:
-            print("update failure")
+            #update failure
             viewServicesPage()
             tk.messagebox.showwarning("Warning", "Update failed!")
     else:
